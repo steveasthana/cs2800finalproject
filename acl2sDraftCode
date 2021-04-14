@@ -1,0 +1,119 @@
+(defdata lop (listof pos))
+(defdata elop (oneof nil (cons pos (cons pos elop))))
+
+(definec encode-acc (cnt :pos cur :pos res :lop) :elop
+   (cond
+    ((endp res) (cons cnt (cons cur nil)))
+    ((== (car res) cur)
+       (encode-acc (+ cnt 1) cur (cdr res)))
+    (t (cons cnt (cons cur (encode-acc 1 (car res) (cdr res)))))))
+
+(definec encode (l :lop) :elop
+  (if (endp l) nil (encode-acc 1 (car l) (cdr l))))
+
+(definec replist (x :nat y :pos) :lop
+  (if (zerop x)
+    nil
+    (cons y (replist (- x 1) y))))
+
+(definec decode (res :elop) :lop
+     (if (endp res) nil
+       (app (replist (car res) (car (cdr res)))
+             (decode (cdr (cdr res))))))
+
+;; Replist approach
+
+(defdata lolop (listof lop))
+
+(definec lo-2lists-opp (l :lolop) :bool
+  (or (endp l)
+      (and (lopp (car l))
+           (equal (length (car l)) 2)
+           (lo-2lists-opp (cdr l)))))
+
+(definec to-replist (l :lop) :lolop
+  :oc (lo-2lists-opp (to-replist l))
+  (cond
+   ((endp l) l)
+   (t (cons (list 1 (car l)) (to-replist (cdr l))))))
+
+(definec from-replist (l :lolop) :lop
+  :ic (lo-2lists-opp l)
+  (cond
+   ((endp l) l)
+   (t (append (replist (car (car l)) (cadr (car l))) (from-replist (cdr l))))))
+
+(defthm round-trip
+  (implies (lopp x)
+         (equal (from-replist (to-replist x)) x)))
+
+(definec condense (in :lolop) :lolop
+  :ic (lo-2lists-opp in)
+  :oc (lo-2lists-opp (condense in))
+  (cond ((endp in) '())
+        ((endp (cdr in)) in)
+        ((== (second (first in))
+             (second (second in)))
+         (condense (cons (list (+ (first (first in))
+                                  (first (second in)))
+                               (second (first in)))
+                         (cdr (cdr in)))))
+        (t (cons (car in) (condense (cdr in))))))
+
+(definec fromlolop (in :lolop) :elop
+  :ic (lo-2lists-opp in)
+  ;(declare (xargs :hints (("Goal" :do-not-induct nil))))
+  (cond ((endp in) '())
+        (t (cons (first (car in))
+                 (cons (second (car in)) (fromlolop (cdr in)))))))
+
+(definec tololop (in :elop) :lolop
+  :oc (lo-2lists-opp (tololop in))
+  (cond ((endp in) '())
+        (t (cons (list (first in) (second in))
+                 (tololop (cdr (cdr in)))))))
+
+(definec decode2 (in :elop) :lop
+  (from-replist (tololop in)))
+
+(definec encode2 (in :lop) :elop
+  (fromlolop (condense (to-replist in))))
+
+;; Theorems
+
+(defthm enc-enc2-forend
+  (implies (and (lopp l) (endp l))
+           (== (encode l)
+               (encode2 l))))
+
+(defthm sam-enc-replist
+  (implies (and (posp x) (posp y) (lopp l))
+           (== (encode-acc x y l)
+               (fromlolop (condense (cons (list x y) (to-replist l)))))))
+
+(defthm enc-enc2-forcons
+  (implies (and (lopp l) (consp l))
+           (== (encode l)
+               (encode2 l))))
+
+(defthm roundabout
+  (implies (and (lolopp l) (lo-2lists-opp l))
+           (== (tololop (fromlolop l)) l)))
+
+(defthm inv-enc2-dec2
+       (implies (lopp l)
+                (== (decode2 (encode2 l)) l)))
+
+(defthm enc-enc2
+  (implies (lopp l)
+           (== (encode l)
+               (encode2 l))))
+
+(defthm dec-dec2
+  (implies (elopp l)
+           (== (decode l)
+               (decode2 l))))
+
+(defthm dec-enc
+  (implies (lopp l)
+           (== (decode (encode l)) l)))
