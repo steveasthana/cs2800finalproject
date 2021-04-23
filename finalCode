@@ -1,0 +1,229 @@
+;;list of positives
+(defdata lop (listof pos))
+;;even length list of positives
+(defdata elop (oneof nil (cons pos (cons pos elop))))
+
+;;encode's a list with help from accumulators for look and say
+(definec encode-acc (cnt :pos cur :pos res :lop) :elop
+   (cond
+    ((endp res) (cons cnt (cons cur nil)))
+    ((== (car res) cur)
+       (encode-acc (+ cnt 1) cur (cdr res)))
+    (t (cons cnt (cons cur (encode-acc 1 (car res) (cdr res)))))))
+
+(check= (encode-acc 1 1 '(1 2 3 4 5)) '(2 1 1 2 1 3 1 4 1 5))
+(check= (encode-acc 3 1 '()) '(3 1))
+(check= (encode-acc 1 1 '(1 1 1)) '(4 1))
+(check= (encode-acc 1 2 '(1 1 1)) '(1 2 3 1))
+
+;;initializes encode-acc or if empty returns nil
+;;encodes a list with look and say sequence
+(definec encode (l :lop) :elop
+  (if (endp l) nil (encode-acc 1 (car l) (cdr l))))
+
+(check= (encode '(1 2 2 3 3 3 4 4 4 4)) '(1 1 2 2 3 3 4 4))
+(check= (encode '()) '())
+(check= (encode '(1 1 3 3 2 4 5 5 5)) '(2 1 2 3 1 2 1 4 3 5))
+(check= (encode '(1 1 1)) '(3 1))
+
+;;produces a list of x elements where every element is y
+;;In other words y repeated x times
+(definec replist (x :nat y :pos) :lop
+  (if (zerop x)
+    nil
+    (cons y (replist (- x 1) y))))
+
+(check= (replist 0 1) nil)
+(check= (replist 1 3) '(3))
+(check= (replist 3 2) '(2 2 2))
+(check= (replist 3 4) '(4 4 4))
+
+;;decodes a list with look and say
+(definec decode (res :elop) :lop
+     (if (endp res) nil
+       (app (replist (car res) (car (cdr res)))
+             (decode (cdr (cdr res))))))
+
+(check= (decode '(1 1 2 2 3 3 4 4)) '(1 2 2 3 3 3 4 4 4 4))
+(check= (decode '()) '())
+(check= (decode '(1 2 3 4)) '(2 4 4 4))
+(check= (decode '(1 1)) '(1))
+
+;; Replist approach
+
+;;list of list of positives
+(defdata lolop (listof lop))
+
+;;determines if a list of list of postiives is
+;; a list of 2 element lists of positives (list of pairs of positives)
+(definec lo-2lists-opp (l :lolop) :bool
+  (or (endp l)
+      (and (lopp (car l))
+           (equal (length (car l)) 2)
+           (lo-2lists-opp (cdr l)))))
+
+(check= (lo-2lists-opp '((1 3) (2 2))) t)
+(check= (lo-2lists-opp '((1 3) (2))) nil)
+(check= (lo-2lists-opp '((1 3) (2 2) (5 6))) t)
+(check= (lo-2lists-opp '()) t)
+(check= (lo-2lists-opp '('(1 2 3))) nil)
+
+;;takes a list and puts it in a structure representing a list of
+;;replists in the simplest form,
+;;saying each pos shows up once
+;;note: not "simplified" (look at condense to contrast)
+(definec to-replist (l :lop) :lolop
+  :oc (lo-2lists-opp (to-replist l))
+  (cond
+   ((endp l) l)
+   (t (cons (list 1 (car l)) (to-replist (cdr l))))))
+
+(check= (to-replist '(1 2 3 4)) '((1 1) (1 2) (1 3) (1 4)))
+(check= (to-replist '(1 2 2 4)) '((1 1) (1 2) (1 2) (1 4)))
+(check= (to-replist '()) '())
+(check= (to-replist '(1)) '((1 1)))
+
+;;takes lolops in the replist structure and converts them back
+;;into the normal lists the data represents
+(definec from-replist (l :lolop) :lop
+  :ic (lo-2lists-opp l)
+  (cond
+   ((endp l) l)
+   (t (append (replist (car (car l)) (cadr (car l))) (from-replist (cdr l))))))
+
+(check= (from-replist '()) '())
+(check= (from-replist '((1 2) (3 4) (5 6))) '(2 4 4 4 6 6 6 6 6))
+(check= (from-replist '((2 2) (1 4) (3 6))) '(2 2 4 6 6 6))
+(check= (from-replist '((3 1) (2 3))) '(1 1 1 3 3))
+
+;;condense's a lolop in replist structure to be as condense as possible
+;;in replist structure, where two adjacent elements that represent the 
+;;repition of the same number are merged
+;;the "simplification" of data in the replist structure
+(definec condense (in :lolop) :lolop
+  :ic (lo-2lists-opp in)
+  :oc (lo-2lists-opp (condense in))
+  (cond ((endp in) '())
+        ((endp (cdr in)) in)
+        ((== (second (first in))
+             (second (second in)))
+         (condense (cons (list (+ (first (first in))
+                                  (first (second in)))
+                               (second (first in)))
+                         (cdr (cdr in)))))
+        (t (cons (car in) (condense (cdr in))))))
+
+(check= (condense '((1 2) (3 4) (5 6))) '((1 2) (3 4) (5 6)))
+(check= (condense '()) '())
+(check= (condense '((1 1))) '((1 1)))
+(check= (condense '((1 1) (1 2) (1 2) (1 3) (1 4) (1 5) (1 5))) 
+	'((1 1) (2 2) (1 3) (1 4) (2 5)))
+
+;;fromlolop, takes a list of pairs of positive numbers and simply appends
+;;all the sublists together
+(definec fromlolop (in :lolop) :elop
+  :ic (lo-2lists-opp in)
+  ;(declare (xargs :hints (("Goal" :do-not-induct nil))))
+  (cond ((endp in) '())
+        (t (cons (first (car in))
+                 (cons (second (car in)) (fromlolop (cdr in)))))))
+
+(check= (fromlolop '()) '())
+(check= (fromlolop '((1 2) (3 4) (5 6))) '(1 2 3 4 5 6))
+(check= (fromlolop '((1 1))) '(1 1))
+(check= (fromlolop '((1 3) (3 1) (4 5) (6 2))) '(1 3 3 1 4 5 6 2))
+
+;;takes an even length list of positives which produces a list of
+;;the grouped pairs of elements every 2 elements (which itself is a list). 
+(definec tololop (in :elop) :lolop
+  :oc (lo-2lists-opp (tololop in))
+  (cond ((endp in) '())
+        (t (cons (list (first in) (second in))
+                 (tololop (cdr (cdr in)))))))
+
+(check= (tololop '()) '())
+(check= (tololop '(1 3 3 1 4 5 6 2)) '((1 3) (3 1) (4 5) (6 2)))
+(check= (tololop '(1 1)) '((1 1)))
+(check= (tololop '(1 2 3 4 5 6)) '((1 2) (3 4) (5 6))) 
+
+;;decodes an even length sequence of positives with look and say sequence
+(definec decode2 (in :elop) :lop
+  (from-replist (tololop in)))
+
+(check= (decode2 '(1 1 2 2 3 3 4 4)) '(1 2 2 3 3 3 4 4 4 4))
+(check= (decode2 '()) '())
+(check= (decode2 '(1 2 3 4)) '(2 4 4 4))
+(check= (decode2 '(1 1)) '(1))
+
+;;encodes a list of positives with look and say sequence
+(definec encode2 (in :lop) :elop
+  (fromlolop (condense (to-replist in))))
+
+(check= (encode '(1 2 2 3 3 3 4 4 4 4)) '(1 1 2 2 3 3 4 4))
+(check= (encode '()) '())
+(check= (encode '(1 1 3 3 2 4 5 5 5)) '(2 1 2 3 1 2 1 4 3 5))
+(check= (encode '(1 1 1)) '(3 1))
+
+;; Theorems
+
+;;shows that from-replist is the inverse of to-replist
+;;showing that our replist structure and our to and from
+;;are valid ways of representing the data
+(defthm round-trip
+  (implies (lopp x)
+         (equal (from-replist (to-replist x)) x)))
+
+;;shows that if the list is nil that encode and encode2 are the same
+(defthm enc-enc2-forend
+  (implies (and (lopp l) (endp l))
+           (== (encode l)
+               (encode2 l))))
+
+;;shows that encode-acc (with x and y) manipulates data in a similar manner to condense
+;;when the first element in the lolop stores data representing
+;;the replist for x an y or y repeated x times and then the to-replist of the rest
+;;of the list. Additionally uses to-replist to convert l into a replist
+;;and fromlolop to take condense out of the replist structure.
+(defthm sam-enc-replist
+  (implies (and (posp x) (posp y) (lopp l))
+           (== (encode-acc x y l)
+               (fromlolop (condense (cons (list x y) (to-replist l)))))))
+
+;;says that encode is the same as encode2 if the list is a cons
+;;or if the list is not empty
+(defthm enc-enc2-forcons
+  (implies (and (lopp l) (consp l))
+           (== (encode l)
+               (encode2 l))))
+
+;;says that tololop is the inverse of fromlolop
+;;this is useful when trying to explore the relationship of decode2
+;;and encode2, and it shows that tololop and fromlolop doesn't lose
+;;any data in its processing
+(defthm roundabout
+  (implies (and (lolopp l) (lo-2lists-opp l))
+           (== (tololop (fromlolop l)) l)))
+
+;;shows that decode2 is the inverse of encode2
+(defthm inv-enc2-dec2
+       (implies (lopp l)
+                (== (decode2 (encode2 l)) l)))
+
+;;shows that encode and encode2 are the same funciton
+;;rather trivial with enc-enc2-forcons and enc-enc2-forend
+(defthm enc-enc2
+  (implies (lopp l)
+           (== (encode l)
+               (encode2 l))))
+
+;;shows that decode is the same as decode2
+(defthm dec-dec2
+  (implies (elopp l)
+           (== (decode l)
+               (decode2 l))))
+
+;;shows that decode is the inverse of encode or that 
+;;the decode of something encoded is itself
+(defthm dec-enc
+  (implies (lopp l)
+           (== (decode (encode l)) l)))
