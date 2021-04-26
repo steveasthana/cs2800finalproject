@@ -159,10 +159,10 @@
 (definec encode2 (in :lop) :elop
   (fromlolop (condense (to-replist in))))
 
-(check= (encode '(1 2 2 3 3 3 4 4 4 4)) '(1 1 2 2 3 3 4 4))
-(check= (encode '()) '())
-(check= (encode '(1 1 3 3 2 4 5 5 5)) '(2 1 2 3 1 2 1 4 3 5))
-(check= (encode '(1 1 1)) '(3 1))
+(check= (encode2 '(1 2 2 3 3 3 4 4 4 4)) '(1 1 2 2 3 3 4 4))
+(check= (encode2 '()) '())
+(check= (encode2 '(1 1 3 3 2 4 5 5 5)) '(2 1 2 3 1 2 1 4 3 5))
+(check= (encode2 '(1 1 1)) '(3 1))
 
 ;; Theorems
 
